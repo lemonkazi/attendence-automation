@@ -1,0 +1,28 @@
+# Author: Mamun
+# All rights reserved. Copyright (c)
+version: '3.8'
+
+services:
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: attendence_app
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    volumes:
+      - .:/usr/src/app
+    #command: sh -c "tail -f /dev/null && python my_basic_project/app.py && chmod -R 777 my_basic_project"
+    ports:
+      - "8501:8501"
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    networks:
+      - attendence-app-networks
+#Docker Networks
+networks:
+  attendence-app-networks:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local
