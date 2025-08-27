@@ -79,8 +79,8 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                         over_time = hours_logged - 8.0
 
                         # Update 'Hours Logged', 'Over Time', and 'Attendance Status' columns
-                        sheet.update_cell(idx, hours_logged_col, str(round(hours_logged, 2)))
-                        sheet.update_cell(idx, over_time_col, str(round(over_time, 2)))
+                        sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
+                        sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
                         sheet.update_cell(idx, attendance_status_col, "Present")
                     except ValueError:
                         st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
