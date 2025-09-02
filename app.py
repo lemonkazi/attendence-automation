@@ -65,11 +65,11 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                     checkin_time_str = row[checkin_col - 1]
                     if checkin_time_str:
                         try:
-                            checkin_time = datetime.strptime(checkin_time_str, "%I:%M %p")
+                            checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
                             checkout_time = datetime.strptime(time_str, "%I:%M %p")
                             hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
                             over_time = max(hours_logged - 8.0, 0.0)
-                            sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
+                            #sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
                             sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
                             sheet.update_cell(idx, attendance_status_col, "Present")
                         except ValueError:
