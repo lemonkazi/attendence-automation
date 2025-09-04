@@ -31,13 +31,25 @@ tz = pytz.timezone("Asia/Dhaka")
 # --- Refactored Function for Updating Attendance ---
 def update_attendance(employee: str, date_str: str, column_name: str, time_str: str) -> bool:
     """
-    Updates the specified column for the given employee and date in the Google Sheet.
-    If the date does not exist, a new row is inserted right after the last row with a date.
+    Updates the specified column (e.g., 'check-in' or 'check-out') for the given employee and date in the Google Sheet.
+
+    Args:
+        employee (str): The employee's name.
+        date_str (str): The date in format like '8/23/2025'.
+        column_name (str): The column header to update (e.g., 'check-in').
+        time_str (str): The time string to write.
+
+    Returns:
+        bool: True if updated successfully, False otherwise.
     """
+    # Read all rows once
     all_rows = sheet.get_all_values()  # includes headers
     headers = [h.strip() for h in all_rows[6]]  # headers in row 7 (index 6)
+
+    # Convert headers to lower case for case-insensitive matching
     headers_lower = [h.lower() for h in headers]
 
+    # Find column indices (1-based for sheet.update_cell)
     try:
         name_col = headers_lower.index("name") + 1
         date_col = headers_lower.index("date") + 1
@@ -51,33 +63,40 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         st.error(f"⚠️ Column not found in headers. {e}")
         return False
 
-    last_date_row_idx = None
+    last_date = None
     date_found = False
-
-    # Iterate through rows to find the date and the last row with a date
     for idx, row in enumerate(all_rows[7:], start=8):  # data starts from row 8
+        row_name = (row[name_col - 1] or "").strip()
         row_date_str = (row[date_col - 1] or "").strip()
-        if row_date_str == date_str:
+
+        if row_date_str:
+            last_date = row_date_str
+
+        if last_date == date_str and row_name == employee:
+            sheet.update_cell(idx, target_col, time_str)
             date_found = True
-            if row[name_col - 1].strip() == employee:
-                sheet.update_cell(idx, target_col, time_str)
-                if column_name.lower() == "check-out":
-                    checkin_time_str = row[checkin_col - 1]
-                    if checkin_time_str:
-                        try:
-                            checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
-                            checkout_time = datetime.strptime(time_str, "%I:%M %p")
-                            hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
-                            over_time = max(hours_logged - 8.0, 0.0)
-                            #sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
-                            sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
-                            sheet.update_cell(idx, attendance_status_col, "Present")
-                        except ValueError:
-                            st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
-                            return False
-                    else:
-                        st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
-                return True
+            # If updating 'check-out', calculate and update other columns
+            if column_name.lower() == "check-out":
+                checkin_time_str = row[checkin_col - 1]
+                if checkin_time_str:
+                    try:
+                        # Parse time strings and calculate time difference
+                        checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
+                        checkout_time = datetime.strptime(time_str, "%I:%M %p")
+                        hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
+                        over_time = hours_logged - 8.0
+
+                        # Update 'Hours Logged', 'Over Time', and 'Attendance Status' columns
+                        sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
+                        sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
+                        sheet.update_cell(idx, attendance_status_col, "Present")
+                    except ValueError:
+                        st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
+                        return False
+                else:
+                    st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
+
+            return True
         if row_date_str:  # Track the last row with a date
             last_date_row_idx = idx
 
