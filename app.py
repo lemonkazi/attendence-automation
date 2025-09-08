@@ -65,12 +65,21 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
 
     last_date = None
     date_found = False
+    empty_employee_row_idx = None
     for idx, row in enumerate(all_rows[7:], start=8):  # data starts from row 8
         row_name = (row[name_col - 1] or "").strip()
         row_date_str = (row[date_col - 1] or "").strip()
-
+        
+        # If date is empty, use the last visible date (merged cell)
+        if not row_date_str and last_date is not None:
+            row_date_str = last_date
+            
         if row_date_str:
             last_date = row_date_str
+        # If date matches and employee column is empty, mark this row for update
+        if row_date_str == date_str and not row_name:
+            empty_employee_row_idx = idx
+            continue
 
         if last_date == date_str and row_name == employee:
             sheet.update_cell(idx, target_col, time_str)
@@ -99,7 +108,16 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
             return True
         if row_date_str:  # Track the last row with a date
             last_date_row_idx = idx
-
+    
+    # If date found but employee column was empty, update that row
+    if empty_employee_row_idx is not None:
+        sheet.update_cell(empty_employee_row_idx, name_col, employee)
+        sheet.update_cell(empty_employee_row_idx, target_col, time_str)
+        sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
+        sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
+        sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
+        st.info(f"📅 Updated empty employee row for {employee} on {date_str} at row {empty_employee_row_idx}.")
+        return True
     # If date not found, insert a new row right after the last row with a date
     if not date_found:
         insert_row_idx = last_date_row_idx + 1 if last_date_row_idx is not None else 8
