@@ -15,7 +15,18 @@ services:
     #command: sh -c "tail -f /dev/null && python my_basic_project/app.py && chmod -R 777 my_basic_project"
     ports:
       - "8501:8501"
-    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    command: python api.py
+    #command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    networks:
+      - attendence-app-networks
+  react:
+    build:
+      context: ./react
+      dockerfile: Dockerfile
+    ports:
+      - "5173:8080"
+    depends_on:
+      - python
     networks:
       - attendence-app-networks
 #Docker Networks
