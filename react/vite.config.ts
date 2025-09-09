@@ -10,7 +10,7 @@
 //     port: 8080,
 //     proxy: {
 //       '/api': {
-//         target: 'http://127.0.0.1:8501',
+//         target: 'http://python:8502',
 //         changeOrigin: true,
 //         rewrite: (path) => path.replace(/^\/api/, ''),
 //       },
@@ -34,7 +34,7 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
-    base: "/jobcan/", // Set the base path for the React app
+    //base: "/jobcan/", // Set the base path for the React app
     server: {
       host: "::",
       port: 8080,
