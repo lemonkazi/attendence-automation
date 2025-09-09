@@ -53,7 +53,8 @@ const AttendanceSystem = () => {
     setIsLoading(prev => ({ ...prev, [action]: true }));
 
     try {
-      const response = await fetch('/api/attendance', {
+      const apiUrl = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${apiUrl}/attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
