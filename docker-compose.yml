@@ -3,24 +3,50 @@
 version: '3.8'
 
 services:
-  python:
+  python-app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: attendence_app
+    container_name: attendance_app
     restart: unless-stopped
     working_dir: /usr/src/app
     volumes:
       - .:/usr/src/app
-    #command: sh -c "tail -f /dev/null && python my_basic_project/app.py && chmod -R 777 my_basic_project"
     ports:
       - "8501:8501"
     command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
     networks:
-      - attendence-app-networks
-#Docker Networks
+      - attendance-app-networks
+
+  python-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: attendance_api
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - "8502:8502"
+    command: python api.py
+    networks:
+      - attendance-app-networks
+
+  react:
+    build:
+      context: ./react
+      dockerfile: Dockerfile
+    ports:
+      - "5173:8080"
+    depends_on:
+      - python-api
+    networks:
+      - attendance-app-networks
+
+# Docker Networks
 networks:
-  attendence-app-networks:
+  attendance-app-networks:
     driver: bridge
 
 volumes:

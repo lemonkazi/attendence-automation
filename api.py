@@ -4,6 +4,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import os
 import pytz
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # --- Google Sheets Auth ---
 scope = ["https://spreadsheets.google.com/feeds",
@@ -60,7 +65,8 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         over_time_col = headers_lower.index("over time(h.m)") + 1
         attendance_status_col = headers_lower.index("attendance status") + 1
     except ValueError as e:
-        st.error(f"⚠️ Column not found in headers. {e}")
+        #return e
+        #st.error(f"⚠️ Column not found in headers. {e}")
         return False
 
     last_date = None
@@ -100,10 +106,11 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                         sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
                         sheet.update_cell(idx, attendance_status_col, "Present")
                     except ValueError:
-                        st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
+                        #st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
                         return False
                 else:
-                    st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
+                    return False  # No check-in time found, cannot calculate hours logged
+                    #st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
 
             return True
         if row_date_str:  # Track the last row with a date
@@ -116,7 +123,7 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
         sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
         sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
-        st.info(f"📅 Updated empty employee row for {employee} on {date_str} at row {empty_employee_row_idx}.")
+        #st.info(f"📅 Updated empty employee row for {employee} on {date_str} at row {empty_employee_row_idx}.")
         return True
     # If date not found, insert a new row right after the last row with a date
     if not date_found:
@@ -132,64 +139,29 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         elif column_name.lower() == "check-out":
             new_row[checkout_col - 1] = time_str
         sheet.insert_row(new_row, insert_row_idx)
-        st.info(f"📅 New row created for {employee} on {date_str} at row {insert_row_idx}.")
+        #st.info(f"📅 New row created for {employee} on {date_str} at row {insert_row_idx}.")
         return True
 
     return False
 
-# --- Streamlit UI ---
-st.title("🕒 Employee Attendance")
+@app.route('/attendance', methods=['POST'])
+def handle_attendance():
+    data = request.get_json()
+    
+    employee = data.get('employee')
+    action = data.get('action')
+    date_str = data.get('date')
+    time_str = data.get('time')
 
-clock_html = """
-    <div id="clock" style="color:white; text-align: center; font-size: 48px; font-weight: bold;"></div>
-    <div id="date" style="color:white; text-align: center; font-size: 30px; font-weight: bold;"></div>
+    if not all([employee, action, date_str, time_str]):
+        return jsonify({'error': 'Missing data'}), 400
 
-    <script>
-    function updateClock() {
-        const now = new Date();
-        const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Dhaka',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true
-        });
-        document.getElementById('clock').innerHTML = formatter.format(now);
-        const dateFormatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Dhaka',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-        document.getElementById('date').innerHTML = dateFormatter.format(now);
-    }
-    updateClock();
-    setInterval(updateClock, 1000);
-    </script>
-    """
+    column_name = 'check-in' if action == 'checkin' else 'check-out'
+    if update_attendance(employee, date_str, column_name, time_str):
+        return jsonify({'message': f'Successfully {action} for {employee}'})
+    else:
+        return jsonify({'error': 'Failed to update attendance'}), 500
 
-st.components.v1.html(clock_html, height=100)
-
-selected_employee = st.selectbox("Select Employee", employee_names)
-
-# ... existing code ...
-# Create three columns: left for check-in, middle for clock, right for check-out
-col1, col3 = st.columns([1,1])  # Middle column wider for the clock
-
-
-
-with col1:
-    if st.button("Check-in"):
-        check_in_time = datetime.now(tz).strftime("%I:%M %p")
-        if update_attendance(selected_employee, today, "check-in", check_in_time):
-            st.success(f"✅ {selected_employee} checked-in at {check_in_time}")
-        else:
-            st.error("⚠️ No matching row found for today's date & employee.")
-
-with col3:
-    if st.button("Checkout"):
-        check_out_time = datetime.now(tz).strftime("%I:%M %p")
-        if update_attendance(selected_employee, today, "check-out", check_out_time):
-            st.success(f"✅ {selected_employee} checked-out at {check_out_time}")
-        else:
-            st.error("⚠️ No matching row found for today's date & employee.")
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8502, debug=True)
+ 
