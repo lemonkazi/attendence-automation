@@ -53,7 +53,7 @@ const AttendanceSystem = () => {
     setIsLoading(prev => ({ ...prev, [action]: true }));
 
     try {
-      const apiUrl = '/api';
+      const apiUrl = __API_PREFIX__;
       const response = await fetch(`${apiUrl}/attendance`, {
         method: 'POST',
         headers: {

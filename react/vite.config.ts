@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const apiUrl = env.VITE_API_URL || 'http://python-api:8502'; // Use container name in Docker
   return {
-    // base: '/jobcan/',
+    base: mode === 'development' ? '/' : '/jobcan/',
     server: {
       host: '::',
       port: 8080,
@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, ''),
         },
       },
+    },
+    define: {
+      __API_PREFIX__: JSON.stringify(
+        mode === 'development' ? '/api' : '/jobcan-api'
+      ),
     },
     plugins: [react(), mode === 'development' && componentTagger()].filter(Boolean),
     resolve: {

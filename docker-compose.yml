@@ -41,6 +41,8 @@ services:
       - "5173:8080"
     depends_on:
       - python-api
+    environment:
+      - VITE_API_URL=http://python-api:8502
     networks:
       - attendance-app-networks
 
