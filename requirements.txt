@@ -5,3 +5,5 @@ pytz
 openai==0.28.0               # OpenAI API client
 langchain==0.1.0             # LangChain for LLM chains
 python-dotenv
+Flask
+Flask-Cors
