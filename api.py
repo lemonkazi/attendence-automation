@@ -147,6 +147,7 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
 @app.route('/attendance', methods=['POST'])
 def handle_attendance():
     data = request.get_json()
+    return jsonify({'message': 'No data provided'}), 200
     
     employee = data.get('employee')
     action = data.get('action')

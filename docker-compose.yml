@@ -29,7 +29,7 @@ services:
       - .:/usr/src/app
     ports:
       - "8502:8502"
-    command: python api.py
+    command: python translate_api.py
     networks:
       - attendance-app-networks
 
