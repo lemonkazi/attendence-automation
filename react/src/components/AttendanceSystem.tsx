@@ -19,6 +19,7 @@ const AttendanceSystem = () => {
     "Md. Nazmul Hasan", 
     "Md. Majharul Anwar"
   ];
+  const isAfterNoon = new Date().getHours() >= 12;
 
   const getCurrentTime = () => {
     return new Intl.DateTimeFormat('en-US', {
@@ -145,6 +146,7 @@ const AttendanceSystem = () => {
                 onClick={() => handleAttendance('checkin')}
                 disabled={!selectedEmployee || isLoading.checkin}
                 size="lg"
+                variant={isAfterNoon ? "outline" : "default"}
                 className="h-16 text-lg"
               >
                 <LogIn className="w-5 h-5 mr-2" />
@@ -154,7 +156,7 @@ const AttendanceSystem = () => {
               <Button
                 onClick={() => handleAttendance('checkout')}
                 disabled={!selectedEmployee || isLoading.checkout}
-                variant="outline"
+                variant={isAfterNoon ? "default" : "outline"}
                 size="lg"
                 className="h-16 text-lg"
               >
