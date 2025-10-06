@@ -54,7 +54,7 @@ const AttendanceSystem = () => {
     setIsLoading(prev => ({ ...prev, [action]: true }));
 
     try {
-      const apiUrl = '/api';
+      const apiUrl = process.env.NODE_ENV === 'development' ? '/api' : '/jobcan/api';
       const response = await fetch(`${apiUrl}/attendance`, {
         method: 'POST',
         headers: {

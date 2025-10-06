@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const apiUrl = env.VITE_API_URL || 'http://python-api:8502'; // Use container name in Docker
   return {
+    // if NODE_ENV is development, use the base or unser base
+    base: mode === 'development' ? '/' : '/jobcan/',
     // base: '/jobcan/',
     server: {
       host: '::',
