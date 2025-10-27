@@ -1,11 +1,13 @@
-import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import os
 import pytz
+import tempfile
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import speech_recognition as sr
+from pydub import AudioSegment
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -24,7 +26,6 @@ month_str = now.strftime("%B")  # Get full month name (e.g., August)
 year_last_two_digits = now.year % 100  # Get last two digits of the year (e.g., 25)
 
 worksheet_name = f"{month_str}{year_last_two_digits}"
-#st.title(worksheet_name)
 sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
 
 today = datetime.today().strftime("%-m/%-d/%Y")  # e.g. 8/23/2025
@@ -65,8 +66,6 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         over_time_col = headers_lower.index("over time(h.m)") + 1
         attendance_status_col = headers_lower.index("attendance status") + 1
     except ValueError as e:
-        #return e
-        #st.error(f"⚠️ Column not found in headers. {e}")
         return False
 
     last_date = None
@@ -106,11 +105,9 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                         sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
                         sheet.update_cell(idx, attendance_status_col, "Present")
                     except ValueError:
-                        #st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
                         return False
                 else:
                     return False  # No check-in time found, cannot calculate hours logged
-                    #st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
 
             return True
         if row_date_str:  # Track the last row with a date
@@ -123,7 +120,6 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
         sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
         sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
-        #st.info(f"📅 Updated empty employee row for {employee} on {date_str} at row {empty_employee_row_idx}.")
         return True
     # If date not found, insert a new row right after the last row with a date
     if not date_found:
@@ -139,13 +135,24 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         elif column_name.lower() == "check-out":
             new_row[checkout_col - 1] = time_str
         sheet.insert_row(new_row, insert_row_idx)
-        #st.info(f"📅 New row created for {employee} on {date_str} at row {insert_row_idx}.")
         return True
 
     return False
 
+# --- Audio Transcription Functions ---
+def convert_to_wav(input_path: str, output_path: str = None) -> str:
+    """Convert any audio format to WAV for speech recognition"""
+    if output_path is None:
+        output_path = tempfile.mktemp(suffix='.wav')
+    audio = AudioSegment.from_file(input_path)
+    audio = audio.set_frame_rate(16000).set_channels(1)
+    audio.export(output_path, format="wav")
+    return output_path
+
+# --- Routes ---
 @app.route('/attendance', methods=['POST'])
 def handle_attendance():
+    """Handle attendance check-in/check-out requests"""
     data = request.get_json()
     
     employee = data.get('employee')
@@ -162,6 +169,104 @@ def handle_attendance():
     else:
         return jsonify({'error': 'Failed to update attendance'}), 500
 
+@app.route('/transcribe', methods=['POST'])
+def transcribe_audio():
+    """
+    Transcribe audio file to text - supports multiple formats with FFmpeg
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'Empty filename'}), 400
+
+        allowed_extensions = ['.mp3', '.wav', '.webm', '.ogg', '.m4a', '.mp4', '.flac', '.mpeg']
+        file_extension = os.path.splitext(file.filename.lower())[1]
+        if file_extension not in allowed_extensions:
+            return jsonify({'error': f"Unsupported file type. Supported formats: MP3, WAV, WebM, OGG, M4A, MP4, FLAC"}), 400
+
+        # Create temporary input file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as input_temp_file:
+            file.save(input_temp_file.name)
+            input_path = input_temp_file.name
+
+        wav_path = None
+        try:
+            wav_path = convert_to_wav(input_path)
+            recognizer = sr.Recognizer()
+
+            with sr.AudioFile(wav_path) as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                audio_data = recognizer.record(source)
+
+                try:
+                    text = recognizer.recognize_google(audio_data)
+                    engine = "google_web_speech"
+                    success = True
+                    message = "Transcription completed successfully"
+                except sr.UnknownValueError:
+                    text = ""
+                    engine = "google_web_speech"
+                    success = True
+                    message = "Audio was clear but no speech could be understood"
+                except sr.RequestError:
+                    try:
+                        text = recognizer.recognize_sphinx(audio_data)
+                        engine = "sphinx_offline"
+                        success = True
+                        message = "Transcription completed using offline engine"
+                    except sr.UnknownValueError:
+                        text = ""
+                        engine = "sphinx_offline"
+                        success = True
+                        message = "Offline engine could not understand audio"
+                    except Exception as sphinx_error:
+                        return jsonify({'error': f"All transcription engines failed: {str(sphinx_error)}"}), 500
+
+            return jsonify({
+                "success": success,
+                "text": text,
+                "engine": engine,
+                "file_name": file.filename,
+                "message": message,
+            })
+
+        finally:
+            if os.path.exists(input_path):
+                os.unlink(input_path)
+            if wav_path and os.path.exists(wav_path):
+                os.unlink(wav_path)
+
+    except Exception as e:
+        return jsonify({'error': f"Transcription failed: {str(e)}"}), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "services": {
+            "attendance": "active",
+            "transcription": "active"
+        },
+        "supported_formats": ["MP3", "WAV", "WebM", "OGG", "M4A", "MP4", "FLAC"],
+        "engines": ["google_web_speech", "sphinx_offline"],
+        "note": "FFmpeg required for non-WAV formats"
+    })
+
+@app.route('/', methods=['GET'])
+def index():
+    """Root endpoint with service information"""
+    return jsonify({
+        "message": "Attendance and Transcription Service",
+        "endpoints": {
+            "/attendance": "POST - Submit attendance check-in/check-out",
+            "/transcribe": "POST - Transcribe audio files",
+            "/health": "GET - Service health check"
+        }
+    })
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8502, debug=True)
- 
