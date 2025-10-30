@@ -1,0 +1,166 @@
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
+import os
+import pytz
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+# --- Google Sheets Auth ---
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
+script_dir = os.path.dirname(os.path.abspath(__file__))
+credential_path = os.path.join(script_dir, 'credential.json')
+creds = ServiceAccountCredentials.from_json_keyfile_name(credential_path, scope)
+client = gspread.authorize(creds)
+
+# Get today's date
+now = datetime.today()
+month_str = now.strftime("%B")  # Get full month name (e.g., August)
+year_last_two_digits = now.year % 100  # Get last two digits of the year (e.g., 25)
+
+worksheet_name = f"{month_str}{year_last_two_digits}"
+#st.title(worksheet_name)
+sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
+
+today = datetime.today().strftime("%-m/%-d/%Y")  # e.g. 8/23/2025
+
+# --- Settings ---
+employee_names = ["Abdullah Al Mamun", "Md. Nazmul Hasan", "Md. Majharul Anwar"]
+tz = pytz.timezone("Asia/Dhaka")
+
+# --- Refactored Function for Updating Attendance ---
+def update_attendance(employee: str, date_str: str, column_name: str, time_str: str) -> bool:
+    """
+    Updates the specified column (e.g., 'check-in' or 'check-out') for the given employee and date in the Google Sheet.
+
+    Args:
+        employee (str): The employee's name.
+        date_str (str): The date in format like '8/23/2025'.
+        column_name (str): The column header to update (e.g., 'check-in').
+        time_str (str): The time string to write.
+
+    Returns:
+        bool: True if updated successfully, False otherwise.
+    """
+    # Read all rows once
+    all_rows = sheet.get_all_values()  # includes headers
+    headers = [h.strip() for h in all_rows[6]]  # headers in row 7 (index 6)
+
+    # Convert headers to lower case for case-insensitive matching
+    headers_lower = [h.lower() for h in headers]
+
+    # Find column indices (1-based for sheet.update_cell)
+    try:
+        name_col = headers_lower.index("name") + 1
+        date_col = headers_lower.index("date") + 1
+        target_col = headers_lower.index(column_name.lower()) + 1
+        checkin_col = headers_lower.index("check-in") + 1
+        checkout_col = headers_lower.index("check-out") + 1
+        hours_logged_col = headers_lower.index("hours logged") + 1
+        over_time_col = headers_lower.index("over time(h.m)") + 1
+        attendance_status_col = headers_lower.index("attendance status") + 1
+    except ValueError as e:
+        #return e
+        #st.error(f"⚠️ Column not found in headers. {e}")
+        return False
+
+    last_date = None
+    date_found = False
+    empty_employee_row_idx = None
+    for idx, row in enumerate(all_rows[7:], start=8):  # data starts from row 8
+        row_name = (row[name_col - 1] or "").strip()
+        row_date_str = (row[date_col - 1] or "").strip()
+        
+        # If date is empty, use the last visible date (merged cell)
+        if not row_date_str and last_date is not None:
+            row_date_str = last_date
+            
+        if row_date_str:
+            last_date = row_date_str
+        # If date matches and employee column is empty, mark this row for update
+        if row_date_str == date_str and not row_name:
+            empty_employee_row_idx = idx
+            continue
+
+        if last_date == date_str and row_name == employee:
+            sheet.update_cell(idx, target_col, time_str)
+            date_found = True
+            # If updating 'check-out', calculate and update other columns
+            if column_name.lower() == "check-out":
+                checkin_time_str = row[checkin_col - 1]
+                if checkin_time_str:
+                    try:
+                        # Parse time strings and calculate time difference
+                        checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
+                        checkout_time = datetime.strptime(time_str, "%I:%M %p")
+                        hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
+                        over_time = hours_logged - 8.0
+
+                        # Update 'Hours Logged', 'Over Time', and 'Attendance Status' columns
+                        sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
+                        sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
+                        sheet.update_cell(idx, attendance_status_col, "Present")
+                    except ValueError:
+                        #st.error(f"⚠️ Could not parse check-in or check-out time for {employee} on {date_str}.")
+                        return False
+                else:
+                    return False  # No check-in time found, cannot calculate hours logged
+                    #st.warning(f"⚠️ Check-in time not found for {employee} on {date_str}.")
+
+            return True
+        if row_date_str:  # Track the last row with a date
+            last_date_row_idx = idx
+    
+    # If date found but employee column was empty, update that row
+    if empty_employee_row_idx is not None:
+        sheet.update_cell(empty_employee_row_idx, name_col, employee)
+        sheet.update_cell(empty_employee_row_idx, target_col, time_str)
+        sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
+        sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
+        sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
+        #st.info(f"📅 Updated empty employee row for {employee} on {date_str} at row {empty_employee_row_idx}.")
+        return True
+    # If date not found, insert a new row right after the last row with a date
+    if not date_found:
+        insert_row_idx = last_date_row_idx + 1 if last_date_row_idx is not None else 8
+        new_row = [""] * len(headers)
+        new_row[name_col - 1] = employee
+        new_row[date_col - 1] = date_str
+        new_row[hours_logged_col - 1] = "0.00"
+        new_row[over_time_col - 1] = "0.00"
+        new_row[attendance_status_col - 1] = "Present"
+        if column_name.lower() == "check-in":
+            new_row[checkin_col - 1] = time_str
+        elif column_name.lower() == "check-out":
+            new_row[checkout_col - 1] = time_str
+        sheet.insert_row(new_row, insert_row_idx)
+        #st.info(f"📅 New row created for {employee} on {date_str} at row {insert_row_idx}.")
+        return True
+
+    return False
+
+@app.route('/attendance', methods=['POST'])
+def handle_attendance():
+    data = request.get_json()
+    
+    employee = data.get('employee')
+    action = data.get('action')
+    date_str = data.get('date')
+    time_str = data.get('time')
+
+    if not all([employee, action, date_str, time_str]):
+        return jsonify({'error': 'Missing data'}), 400
+
+    column_name = 'check-in' if action == 'checkin' else 'check-out'
+    if update_attendance(employee, date_str, column_name, time_str):
+        return jsonify({'message': f'Successfully {action} for {employee}'})
+    else:
+        return jsonify({'error': 'Failed to update attendance'}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8502, debug=True)
+ 
