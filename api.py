@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from enum import Enum
+from assemblyai_engine import AssemblyAIEngine
+from transcription_base import TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface
+
 import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
@@ -29,6 +32,7 @@ class TranscriptionEngine(Enum):
     VOSK = "vosk"
     WHISPER = "whisper"
     SPHINX = "sphinx"
+    ASSEMBLYAI = "assemblyai"  # ✅ new engine
 
 class TranscriptionConfig:
     """Configuration for transcription services"""
@@ -36,12 +40,17 @@ class TranscriptionConfig:
         # Read the environment variable, default to True if not set
         self.enable_whisper = os.getenv("ENABLE_WHISPER", "True").lower() in ("true", "1", "yes")
         self.preferred_engines = []
-        if self.enable_whisper:
-            self.preferred_engines.append(TranscriptionEngine.WHISPER)
+        # if self.enable_whisper:
+        #     self.preferred_engines.append(TranscriptionEngine.WHISPER)
         self.preferred_engines.extend([
+            TranscriptionEngine.ASSEMBLYAI,
             TranscriptionEngine.VOSK,
             TranscriptionEngine.GOOGLE_WEB_SPEECH,
         ])
+        # self.preferred_engines.extend([
+        #     TranscriptionEngine.VOSK,
+        #     TranscriptionEngine.GOOGLE_WEB_SPEECH,
+        # ])
         # self.preferred_engines = [
         #     TranscriptionEngine.VOSK,  # Offline, good balance
         #     TranscriptionEngine.WHISPER,  # High accuracy
@@ -211,6 +220,8 @@ class TranscriptionService:
             TranscriptionEngine.WHISPER: WhisperEngine(),
             TranscriptionEngine.SPHINX: SphinxEngine(),
         }
+        # ✅ Add AssemblyAI engine
+        self.engines[TranscriptionEngine("assemblyai")] = AssemblyAIEngine()
     
     def transcribe_audio(self, audio_path: str, preferred_engine: Optional[TranscriptionEngine] = None) -> Dict[str, Any]:
         """Transcribe audio using available engines with fallback"""
@@ -259,6 +270,7 @@ month_str = now.strftime("%B")
 year_last_two_digits = now.year % 100
 worksheet_name = f"{month_str}{year_last_two_digits}"
 sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
+print(f"Using worksheet: {worksheet_name}")
 today = datetime.today().strftime("%-m/%-d/%Y")
 
 # --- Settings ---
@@ -267,85 +279,257 @@ tz = pytz.timezone("Asia/Dhaka")
 
 # --- Refactored Function for Updating Attendance ---
 def update_attendance(employee: str, date_str: str, column_name: str, time_str: str) -> bool:
-    all_rows = sheet.get_all_values()
-    headers = [h.strip() for h in all_rows[6]]
-    headers_lower = [h.lower() for h in headers]
+    """
+    Update attendance record with comprehensive error handling.
+    
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
     try:
-        name_col = headers_lower.index("name") + 1
-        date_col = headers_lower.index("date") + 1
-        target_col = headers_lower.index(column_name.lower()) + 1
-        checkin_col = headers_lower.index("check-in") + 1
-        checkout_col = headers_lower.index("check-out") + 1
-        hours_logged_col = headers_lower.index("hours logged") + 1
-        over_time_col = headers_lower.index("over time(h.m)") + 1
-        attendance_status_col = headers_lower.index("attendance status") + 1
-    except ValueError as e:
-        return False
-    last_date = None
-    date_found = False
-    empty_employee_row_idx = None
-    for idx, row in enumerate(all_rows[7:], start=8):
-        row_name = (row[name_col - 1] or "").strip()
-        row_date_str = (row[date_col - 1] or "").strip()
-        if not row_date_str and last_date is not None:
-            row_date_str = last_date
-        if row_date_str:
-            last_date = row_date_str
-        if row_date_str == date_str and not row_name:
-            empty_employee_row_idx = idx
-            continue
-        if last_date == date_str and row_name == employee:
-            sheet.update_cell(idx, target_col, time_str)
-            date_found = True
-            if column_name.lower() == "check-out":
-                checkin_time_str = row[checkin_col - 1]
-                if checkin_time_str:
+        # Debug info
+        print(f"Debug: Starting update_attendance for employee={employee}, date={date_str}, column={column_name}, time={time_str}")
+        
+        # Validate inputs
+        if not all([employee, date_str, column_name, time_str]):
+            print(f"Error: Missing required parameters. employee={employee}, date={date_str}, column={column_name}, time={time_str}")
+            return False
+            
+        # Get all rows from sheet
+        try:
+            all_rows = sheet.get_all_values()
+            print(f"Debug: Retrieved {len(all_rows)} rows from sheet")
+        except Exception as e:
+            print(f"Error: Failed to get sheet data: {str(e)}")
+            return False
+        
+        # Check if we have enough rows for headers
+        if len(all_rows) < 7:
+            print(f"Error: Not enough rows in sheet. Expected at least 7 rows, got {len(all_rows)}")
+            return False
+            
+        # Get headers
+        try:
+            headers = [str(h).strip() for h in all_rows[6]]
+            headers_lower = [h.lower() for h in headers]
+            print(f"Debug: Headers found: {headers}")
+            
+            # Find required columns with better error messages
+            required_columns = {
+                "name": "name",
+                "date": "date",
+                "check-in": "check-in",
+                "check-out": "check-out",
+                "hours logged": "hours logged",
+                "over time(h.m)": "over time(h.m)",
+                "attendance status": "attendance status"
+            }
+            
+            column_indices = {}
+            missing_columns = []
+            
+            for col_key, col_name in required_columns.items():
+                try:
+                    column_indices[col_key] = headers_lower.index(col_name.lower()) + 1
+                    print(f"Debug: Column '{col_name}' found at index {column_indices[col_key]}")
+                except ValueError:
+                    missing_columns.append(col_name)
+            
+            if missing_columns:
+                print(f"Error: Missing required columns: {missing_columns}")
+                print(f"Debug: Available columns: {headers}")
+                return False
+                
+            # Unpack column indices for readability
+            name_col = column_indices["name"]
+            date_col = column_indices["date"]
+            checkin_col = column_indices["check-in"]
+            checkout_col = column_indices["check-out"]
+            hours_logged_col = column_indices["hours logged"]
+            over_time_col = column_indices["over time(h.m)"]
+            attendance_status_col = column_indices["attendance status"]
+            
+            # Find target column (the column to update)
+            try:
+                target_col = headers_lower.index(column_name.lower()) + 1
+                print(f"Debug: Target column '{column_name}' found at index {target_col}")
+            except ValueError:
+                print(f"Error: Column '{column_name}' not found in headers")
+                print(f"Debug: Available columns: {headers}")
+                return False
+                
+        except Exception as e:
+            print(f"Error: Failed to process headers: {str(e)}")
+            return False
+        
+        # Validate date format (assuming date_str is in a specific format)
+        try:
+            # You might want to parse the date here if needed
+            # For now, just check it's not empty
+            if not date_str.strip():
+                print("Error: Empty date string")
+                return False
+        except Exception as e:
+            print(f"Error: Invalid date format: {str(e)}")
+            return False
+        
+        # Search for employee and date
+        last_date = None
+        date_found = False
+        empty_employee_row_idx = None
+        
+        print(f"Debug: Starting search from row 8 to {len(all_rows)}")
+        
+        for idx, row in enumerate(all_rows[7:], start=8):
+            try:
+                # Debug current row
+                if idx <= 15:  # Only print first few rows for debugging
+                    print(f"Debug Row {idx}: name='{row[name_col-1]}', date='{row[date_col-1]}'")
+                
+                row_name = (row[name_col - 1] if len(row) >= name_col else "").strip()
+                row_date_str = (row[date_col - 1] if len(row) >= date_col else "").strip()
+                
+                # If no date in current row, use last known date
+                if not row_date_str and last_date is not None:
+                    row_date_str = last_date
+                    
+                if row_date_str:
+                    last_date = row_date_str
+                
+                # Check for empty employee row for the target date
+                if row_date_str == date_str and not row_name:
+                    empty_employee_row_idx = idx
+                    print(f"Debug: Found empty employee row at index {idx} for date {date_str}")
+                    continue
+                    
+                # Check if this row matches both employee and date
+                if last_date == date_str and row_name == employee:
+                    print(f"Debug: Found matching row at index {idx}")
+                    
+                    # Update the target cell
                     try:
-                        checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
-                        checkout_time = datetime.strptime(time_str, "%I:%M %p")
-                        hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
-                        over_time = hours_logged - 8.0
-                        sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
-                        sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
-                        sheet.update_cell(idx, attendance_status_col, "Present")
-                    except ValueError:
+                        sheet.update_cell(idx, target_col, time_str)
+                        print(f"Debug: Updated cell ({idx}, {target_col}) with '{time_str}'")
+                        date_found = True
+                        
+                        # If this is a check-out, calculate hours
+                        if column_name.lower() == "check-out":
+                            checkin_time_str = (row[checkin_col - 1] if len(row) >= checkin_col else "").strip()
+                            
+                            if checkin_time_str:
+                                try:
+                                    # Handle time formats with and without seconds
+                                    try:
+                                        checkin_time = datetime.strptime(checkin_time_str, "%I:%M:%S %p")
+                                    except ValueError:
+                                        checkin_time = datetime.strptime(checkin_time_str, "%I:%M %p")
+                                    
+                                    checkout_time = datetime.strptime(time_str, "%I:%M %p")
+                                    hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
+                                    over_time = max(0, hours_logged - 8.0)  # Ensure non-negative
+                                    
+                                    # Update calculated fields
+                                    sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
+                                    sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
+                                    sheet.update_cell(idx, attendance_status_col, "Present")
+                                    
+                                    print(f"Debug: Calculated hours: logged={hours_logged:.2f}, overtime={over_time:.2f}")
+                                    
+                                except ValueError as e:
+                                    print(f"Error: Failed to parse time for calculation: {str(e)}")
+                                    print(f"Debug: checkin_time_str='{checkin_time_str}', time_str='{time_str}'")
+                                    return False
+                            else:
+                                print(f"Error: No check-in time found for employee {employee}")
+                                return False
+                        
+                        print(f"Success: Attendance updated for {employee} on {date_str}")
+                        return True
+                        
+                    except Exception as e:
+                        print(f"Error: Failed to update cell: {str(e)}")
                         return False
-                else:
-                    return False
-            return True
-    if empty_employee_row_idx is not None:
-        sheet.update_cell(empty_employee_row_idx, name_col, employee)
-        sheet.update_cell(empty_employee_row_idx, target_col, time_str)
-        sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
-        sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
-        sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
-        return True
-    if not date_found:
-        insert_row_idx = idx + 1 if last_date is not None else 8
-        new_row = [""] * len(headers)
-        new_row[name_col - 1] = employee
-        new_row[date_col - 1] = date_str
-        new_row[hours_logged_col - 1] = "0.00"
-        new_row[over_time_col - 1] = "0.00"
-        new_row[attendance_status_col - 1] = "Present"
-        if column_name.lower() == "check-in":
-            new_row[checkin_col - 1] = time_str
-        elif column_name.lower() == "check-out":
-            new_row[checkout_col - 1] = time_str
-        sheet.insert_row(new_row, insert_row_idx)
-        return True
-    return False
-
-# --- Helper Functions ---
+                        
+            except Exception as e:
+                print(f"Error: Failed to process row {idx}: {str(e)}")
+                continue  # Skip problematic rows and continue searching
+        
+        # If we found an empty employee row for the date, use it
+        if empty_employee_row_idx is not None:
+            print(f"Debug: Using empty employee row at index {empty_employee_row_idx}")
+            try:
+                sheet.update_cell(empty_employee_row_idx, name_col, employee)
+                sheet.update_cell(empty_employee_row_idx, target_col, time_str)
+                sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
+                sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
+                sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
+                
+                print(f"Success: Created new entry in empty row for {employee} on {date_str}")
+                return True
+                
+            except Exception as e:
+                print(f"Error: Failed to update empty row: {str(e)}")
+                return False
+        
+        # If no row found, insert a new row
+        if not date_found:
+            print(f"Debug: No existing row found. Inserting new row.")
+            try:
+                insert_row_idx = (idx + 1) if 'idx' in locals() and idx > 7 else 8
+                
+                new_row = [""] * len(headers)
+                new_row[name_col - 1] = employee
+                new_row[date_col - 1] = date_str
+                new_row[hours_logged_col - 1] = "0.00"
+                new_row[over_time_col - 1] = "0.00"
+                new_row[attendance_status_col - 1] = "Present"
+                
+                if column_name.lower() == "check-in":
+                    new_row[checkin_col - 1] = time_str
+                elif column_name.lower() == "check-out":
+                    new_row[checkout_col - 1] = time_str
+                
+                sheet.insert_row(new_row, insert_row_idx)
+                print(f"Success: Inserted new row for {employee} on {date_str} at row {insert_row_idx}")
+                return True
+                
+            except Exception as e:
+                print(f"Error: Failed to insert new row: {str(e)}")
+                return False
+        
+        print(f"Debug: No action taken - date_found={date_found}, empty_employee_row_idx={empty_employee_row_idx}")
+        return False
+        
+    except Exception as e:
+        print(f"Critical Error: Unexpected error in update_attendance: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
+        return False
 def convert_to_wav(input_path: str, output_path: str = None) -> str:
-    """Convert any audio format to WAV for speech recognition"""
+    """
+    Convert any audio (e.g., .ogg, .m4a, .webm, .mp3) to a valid 16-bit PCM mono WAV.
+    """
     if output_path is None:
         output_path = tempfile.mktemp(suffix='.wav')
-    
+
+    # Load any audio format supported by ffmpeg
     audio = AudioSegment.from_file(input_path)
-    audio = audio.set_frame_rate(16000).set_channels(1)
-    audio.export(output_path, format="wav")
+
+    # Ensure mono channel and 16kHz sample rate
+    audio = audio.set_channels(1).set_frame_rate(16000)
+
+    # Force export as 16-bit PCM (Vosk compatible)
+    audio.export(output_path, format="wav", parameters=["-acodec", "pcm_s16le"])
     return output_path
+# --- Helper Functions ---
+# def convert_to_wav(input_path: str, output_path: str = None) -> str:
+#     """Convert any audio format to WAV for speech recognition"""
+#     if output_path is None:
+#         output_path = tempfile.mktemp(suffix='.wav')
+    
+#     audio = AudioSegment.from_file(input_path)
+#     audio = audio.set_frame_rate(16000).set_channels(1)
+#     audio.export(output_path, format="wav")
+#     return output_path
 
 def cleanup_files(*file_paths):
     """Clean up temporary files"""
