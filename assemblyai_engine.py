@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class AssemblyAIEngine(TranscriptionEngineInterface):
     def __init__(self):
-        self.api_key = os.getenv("ASSEMBLYAI_API_KEY", "5e3d61bfa757498cac93a501b943a03a")
+        self.api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
         if not self.api_key:
             raise RuntimeError("Missing ASSEMBLYAI_API_KEY environment variable")
         
