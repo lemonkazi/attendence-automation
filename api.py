@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from enum import Enum
+# for production development
+# from .assemblyai_engine import AssemblyAIEngine
+# from .transcription_base import TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface
 from assemblyai_engine import AssemblyAIEngine
 from transcription_base import TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface
 
@@ -304,14 +307,16 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
         bool: True if update was successful, False otherwise
     """
     try:
-        # Normalize date (e.g. "2/2/2026" -> "02/02/2026") so %m/%d/%Y works
-        normalized_date = _normalize_date_str(date_str)
-        date_obj = datetime.strptime(normalized_date, "%m/%d/%Y")
-        # Use normalized date for sheet matching so stored format is consistent
-        date_str = normalized_date
-    except ValueError as e:
-        logger.error("Unable to parse date string: %s (error: %s)", date_str, e)
-        return False
+        # Parse the incoming date string (e.g., "1/5/2026")
+        # Handle formats like "1/5/2026" or "01/05/2026"
+        date_obj = datetime.strptime(date_str, "%m/%d/%Y")  # or "%-m/%-d/%Y" if no leading zeros
+    except ValueError:
+        # Try alternative format if needed
+        try:
+            date_obj = datetime.strptime(date_str, "%-m/%-d/%Y")
+        except ValueError:
+            print(f"Error: Unable to parse date string: {date_str}")
+            return False
 
     month_str = date_obj.strftime("%B")  # e.g., "January"
     year_last_two = date_obj.year % 100  # e.g., 26
@@ -319,40 +324,38 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
 
     try:
         sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
-        logger.info("Using worksheet: %s for date %s", worksheet_name, date_str)
+        print(f"Using worksheet: {worksheet_name} for date {date_str}")
     except Exception as e:
-        logger.error("Cannot open worksheet '%s': %s", worksheet_name, e)
+        print(f"Error: Cannot open worksheet '{worksheet_name}': {e}")
         return False
     try:
         # Debug info
-        logger.info("Starting update_attendance for employee=%s, date=%s, column=%s, time=%s",
-                    employee, date_str, column_name, time_str)
-
+        print(f"Debug: Starting update_attendance for employee={employee}, date={date_str}, column={column_name}, time={time_str}")
+        
         # Validate inputs
         if not all([employee, date_str, column_name, time_str]):
-            logger.error("Missing required parameters. employee=%s, date=%s, column=%s, time=%s",
-                         employee, date_str, column_name, time_str)
+            print(f"Error: Missing required parameters. employee={employee}, date={date_str}, column={column_name}, time={time_str}")
             return False
             
         # Get all rows from sheet
         try:
             all_rows = sheet.get_all_values()
-            logger.info("Retrieved %d rows from sheet", len(all_rows))
+            print(f"Debug: Retrieved {len(all_rows)} rows from sheet")
         except Exception as e:
-            logger.error("Failed to get sheet data: %s", e)
+            print(f"Error: Failed to get sheet data: {str(e)}")
             return False
         
         # Check if we have enough rows for headers
         if len(all_rows) < 7:
-            logger.error("Not enough rows in sheet. Expected at least 7 rows, got %d", len(all_rows))
+            print(f"Error: Not enough rows in sheet. Expected at least 7 rows, got {len(all_rows)}")
             return False
             
         # Get headers
         try:
             headers = [str(h).strip() for h in all_rows[6]]
             headers_lower = [h.lower() for h in headers]
-            logger.info("Headers found: %s", headers)
-
+            print(f"Debug: Headers found: {headers}")
+            
             # Find required columns with better error messages
             required_columns = {
                 "name": "name",
@@ -370,12 +373,13 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
             for col_key, col_name in required_columns.items():
                 try:
                     column_indices[col_key] = headers_lower.index(col_name.lower()) + 1
-                    logger.debug("Column '%s' found at index %s", col_name, column_indices[col_key])
+                    print(f"Debug: Column '{col_name}' found at index {column_indices[col_key]}")
                 except ValueError:
                     missing_columns.append(col_name)
             
             if missing_columns:
-                logger.error("Missing required columns: %s. Available columns: %s", missing_columns, headers)
+                print(f"Error: Missing required columns: {missing_columns}")
+                print(f"Debug: Available columns: {headers}")
                 return False
                 
             # Unpack column indices for readability
@@ -390,36 +394,40 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
             # Find target column (the column to update)
             try:
                 target_col = headers_lower.index(column_name.lower()) + 1
-                logger.debug("Target column '%s' found at index %s", column_name, target_col)
+                print(f"Debug: Target column '{column_name}' found at index {target_col}")
             except ValueError:
-                logger.error("Column '%s' not found in headers. Available: %s", column_name, headers)
+                print(f"Error: Column '{column_name}' not found in headers")
+                print(f"Debug: Available columns: {headers}")
                 return False
                 
         except Exception as e:
-            logger.error("Failed to process headers: %s", e)
+            print(f"Error: Failed to process headers: {str(e)}")
             return False
-
-        # Validate date format
-        if not date_str.strip():
-            logger.error("Empty date string")
+        
+        # Validate date format (assuming date_str is in a specific format)
+        try:
+            # You might want to parse the date here if needed
+            # For now, just check it's not empty
+            if not date_str.strip():
+                print("Error: Empty date string")
+                return False
+        except Exception as e:
+            print(f"Error: Invalid date format: {str(e)}")
             return False
-
-        # Search for employee and date (compare normalized dates so "2/2/2026" matches "02/02/2026")
+        
+        # Search for employee and date
         last_date = None
         date_found = False
         empty_employee_row_idx = None
-
-        logger.info("Starting search from row 8 to %d", len(all_rows))
-
+        
+        print(f"Debug: Starting search from row 8 to {len(all_rows)}")
+        
         for idx, row in enumerate(all_rows[7:], start=8):
             try:
-                # Debug current row (first few only)
-                if idx <= 15:
-                    logger.debug("Row %s: name='%s', date='%s'",
-                                 idx,
-                                 row[name_col - 1] if len(row) >= name_col else "",
-                                 row[date_col - 1] if len(row) >= date_col else "")
-
+                # Debug current row
+                if idx <= 15:  # Only print first few rows for debugging
+                    print(f"Debug Row {idx}: name='{row[name_col-1]}', date='{row[date_col-1]}'")
+                
                 row_name = (row[name_col - 1] if len(row) >= name_col else "").strip()
                 row_date_str = (row[date_col - 1] if len(row) >= date_col else "").strip()
                 
@@ -429,32 +437,27 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                     
                 if row_date_str:
                     last_date = row_date_str
-
-                # Compare normalized dates so sheet "2/2/2026" matches request "02/02/2026"
-                row_date_norm = _normalize_date_str(row_date_str) if row_date_str else ""
-                date_match = row_date_norm == date_str
-
+                
                 # Check for empty employee row for the target date
-                if date_match and not row_name:
+                if row_date_str == date_str and not row_name:
                     empty_employee_row_idx = idx
-                    logger.info("Found empty employee row at index %s for date %s", idx, date_str)
+                    print(f"Debug: Found empty employee row at index {idx} for date {date_str}")
                     continue
-
-                # Check if this row matches both employee and date (use normalized last_date)
-                last_date_norm = _normalize_date_str(last_date) if last_date else ""
-                if last_date_norm == date_str and row_name == employee:
-                    logger.info("Found matching row at index %s", idx)
-
+                    
+                # Check if this row matches both employee and date
+                if last_date == date_str and row_name == employee:
+                    print(f"Debug: Found matching row at index {idx}")
+                    
                     # Update the target cell
                     try:
                         sheet.update_cell(idx, target_col, time_str)
-                        logger.info("Updated cell (%s, %s) with '%s'", idx, target_col, time_str)
+                        print(f"Debug: Updated cell ({idx}, {target_col}) with '{time_str}'")
                         date_found = True
-
+                        
                         # If this is a check-out, calculate hours
                         if column_name.lower() == "check-out":
                             checkin_time_str = (row[checkin_col - 1] if len(row) >= checkin_col else "").strip()
-
+                            
                             if checkin_time_str:
                                 try:
                                     # Handle time formats with and without seconds
@@ -465,53 +468,54 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                                     
                                     checkout_time = datetime.strptime(time_str, "%I:%M %p")
                                     hours_logged = (checkout_time - checkin_time).total_seconds() / 3600
-                                    over_time = max(0, hours_logged - 8.0)
-
+                                    over_time = max(0, hours_logged - 8.0)  # Ensure non-negative
+                                    
+                                    # Update calculated fields
                                     sheet.update_cell(idx, hours_logged_col, f"{hours_logged:.2f}")
                                     sheet.update_cell(idx, over_time_col, f"{over_time:.2f}")
                                     sheet.update_cell(idx, attendance_status_col, "Present")
-
-                                    logger.info("Calculated hours: logged=%.2f, overtime=%.2f", hours_logged, over_time)
-
+                                    
+                                    print(f"Debug: Calculated hours: logged={hours_logged:.2f}, overtime={over_time:.2f}")
+                                    
                                 except ValueError as e:
-                                    logger.error("Failed to parse time: %s. checkin_time_str='%s', time_str='%s'",
-                                                 e, checkin_time_str, time_str)
+                                    print(f"Error: Failed to parse time for calculation: {str(e)}")
+                                    print(f"Debug: checkin_time_str='{checkin_time_str}', time_str='{time_str}'")
                                     return False
                             else:
-                                logger.error("No check-in time found for employee %s", employee)
+                                print(f"Error: No check-in time found for employee {employee}")
                                 return False
-
-                        logger.info("Attendance updated for %s on %s", employee, date_str)
+                        
+                        print(f"Success: Attendance updated for {employee} on {date_str}")
                         return True
-
+                        
                     except Exception as e:
-                        logger.error("Failed to update cell: %s", e)
+                        print(f"Error: Failed to update cell: {str(e)}")
                         return False
-
+                        
             except Exception as e:
-                logger.warning("Failed to process row %s: %s", idx, e)
-                continue
-
+                print(f"Error: Failed to process row {idx}: {str(e)}")
+                continue  # Skip problematic rows and continue searching
+        
         # If we found an empty employee row for the date, use it
         if empty_employee_row_idx is not None:
-            logger.info("Using empty employee row at index %s", empty_employee_row_idx)
+            print(f"Debug: Using empty employee row at index {empty_employee_row_idx}")
             try:
                 sheet.update_cell(empty_employee_row_idx, name_col, employee)
                 sheet.update_cell(empty_employee_row_idx, target_col, time_str)
                 sheet.update_cell(empty_employee_row_idx, hours_logged_col, "0.00")
                 sheet.update_cell(empty_employee_row_idx, over_time_col, "0.00")
                 sheet.update_cell(empty_employee_row_idx, attendance_status_col, "Present")
-
-                logger.info("Created new entry in empty row for %s on %s", employee, date_str)
+                
+                print(f"Success: Created new entry in empty row for {employee} on {date_str}")
                 return True
-
+                
             except Exception as e:
-                logger.error("Failed to update empty row: %s", e)
+                print(f"Error: Failed to update empty row: {str(e)}")
                 return False
-
+        
         # If no row found, insert a new row
         if not date_found:
-            logger.info("No existing row found. Inserting new row.")
+            print(f"Debug: No existing row found. Inserting new row.")
             try:
                 insert_row_idx = (idx + 1) if 'idx' in locals() and idx > 7 else 8
                 
@@ -528,19 +532,20 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
                     new_row[checkout_col - 1] = time_str
                 
                 sheet.insert_row(new_row, insert_row_idx)
-                logger.info("Inserted new row for %s on %s at row %s", employee, date_str, insert_row_idx)
+                print(f"Success: Inserted new row for {employee} on {date_str} at row {insert_row_idx}")
                 return True
                 
             except Exception as e:
-                logger.error("Failed to insert new row: %s", e)
+                print(f"Error: Failed to insert new row: {str(e)}")
                 return False
-
-        logger.warning("No action taken - date_found=%s, empty_employee_row_idx=%s",
-                       date_found, empty_employee_row_idx)
+        
+        print(f"Debug: No action taken - date_found={date_found}, empty_employee_row_idx={empty_employee_row_idx}")
         return False
         
     except Exception as e:
-        logger.exception("Unexpected error in update_attendance: %s", e)
+        print(f"Critical Error: Unexpected error in update_attendance: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
         return False
 def convert_to_wav(input_path: str, output_path: str = None) -> str:
     """
@@ -589,23 +594,17 @@ def health_check():
 
 @app.route('/attendance', methods=['POST'])
 def handle_attendance():
-    data = request.get_json() or {}
-    logger.info("POST /attendance request body: %s", data)
+    data = request.get_json()
     employee = data.get('employee')
     action = data.get('action')
     date_str = data.get('date')
     time_str = data.get('time')
     if not all([employee, action, date_str, time_str]):
-        logger.warning("Missing data: employee=%s, action=%s, date=%s, time=%s", employee, action, date_str, time_str)
         return jsonify({'error': 'Missing data'}), 400
     column_name = 'check-in' if action == 'checkin' else 'check-out'
-    logger.info("Calling update_attendance(employee=%s, date=%s, column=%s, time=%s)",
-                employee, date_str, column_name, time_str)
     if update_attendance(employee, date_str, column_name, time_str):
-        logger.info("Attendance update succeeded for %s", employee)
         return jsonify({'message': f'Successfully {action} for {employee}'})
     else:
-        logger.error("Attendance update failed for employee=%s, date=%s, action=%s", employee, date_str, action)
         return jsonify({'error': 'Failed to update attendance'}), 500
 
 @app.route('/transcribe', methods=['POST'])

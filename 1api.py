@@ -1,8 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from enum import Enum
-from assemblyai_engine import AssemblyAIEngine
-from transcription_base import TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface
+from .assemblyai_engine import AssemblyAIEngine
+from .transcription_base import TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface
 
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -265,13 +265,13 @@ creds = ServiceAccountCredentials.from_json_keyfile_name(credential_path, scope)
 client = gspread.authorize(creds)
 
 # Get today's date
-now = datetime.today()
-month_str = now.strftime("%B")
-year_last_two_digits = now.year % 100
-worksheet_name = f"{month_str}{year_last_two_digits}"
-sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
-print(f"Using worksheet: {worksheet_name}")
-today = datetime.today().strftime("%-m/%-d/%Y")
+# now = datetime.today()
+# month_str = now.strftime("%B")
+# year_last_two_digits = now.year % 100
+# worksheet_name = f"{month_str}{year_last_two_digits}"
+# sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
+# print(f"Using worksheet: {worksheet_name}")
+# today = datetime.today().strftime("%-m/%-d/%Y")
 
 # --- Settings ---
 employee_names = ["Abdullah Al Mamun", "Md. Nazmul Hasan", "Md. Majharul Anwar"]
@@ -285,6 +285,28 @@ def update_attendance(employee: str, date_str: str, column_name: str, time_str: 
     Returns:
         bool: True if update was successful, False otherwise
     """
+    try:
+        # Parse the incoming date string (e.g., "1/5/2026")
+        # Handle formats like "1/5/2026" or "01/05/2026"
+        date_obj = datetime.strptime(date_str, "%m/%d/%Y")  # or "%-m/%-d/%Y" if no leading zeros
+    except ValueError:
+        # Try alternative format if needed
+        try:
+            date_obj = datetime.strptime(date_str, "%-m/%-d/%Y")
+        except ValueError:
+            print(f"Error: Unable to parse date string: {date_str}")
+            return False
+
+    month_str = date_obj.strftime("%B")  # e.g., "January"
+    year_last_two = date_obj.year % 100  # e.g., 26
+    worksheet_name = f"{month_str}{year_last_two}"
+
+    try:
+        sheet = client.open("Monthly Attendance Sheet").worksheet(worksheet_name)
+        print(f"Using worksheet: {worksheet_name} for date {date_str}")
+    except Exception as e:
+        print(f"Error: Cannot open worksheet '{worksheet_name}': {e}")
+        return False
     try:
         # Debug info
         print(f"Debug: Starting update_attendance for employee={employee}, date={date_str}, column={column_name}, time={time_str}")
