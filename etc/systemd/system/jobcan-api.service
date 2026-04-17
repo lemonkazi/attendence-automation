@@ -1,0 +1,22 @@
+[Unit]
+Description=Jobcan Streamlit API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/var/www
+#Environment=PATH=/var/www/jobcan/venv/bin
+Environment=PATH=/var/www/jobcan/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/var/www/jobcan/venv/bin/python -m jobcan.api --server.port=8502 --server.address=0.0.0.0
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+# Optional: Limit resources if needed
+# MemoryLimit=512M
+# CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
