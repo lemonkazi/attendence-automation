@@ -37,7 +37,16 @@ class AssemblyAIEngine(TranscriptionEngineInterface):
             logger.info("Uploading file to AssemblyAI...")
             audio_url = self._upload_audio(audio_path)
 
-            data = {"audio_url": audio_url, "speech_model": "universal"}
+            # u3-rt-pro
+            data = {
+                "audio_url": audio_url, 
+                "language_detection": True,
+                "format_text":True,
+                "punctuate":True,
+                "domain": "medical-v1", 
+                "temperature": 0,
+                "speech_model": ["universal-2"]
+            }
             response = requests.post(f"{self.base_url}/transcript", json=data, headers=self.headers)
             response.raise_for_status()
             transcript_id = response.json()["id"]
