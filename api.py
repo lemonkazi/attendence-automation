@@ -224,13 +224,14 @@ class TranscriptionService:
     def __init__(self, config: TranscriptionConfig):
         self.config = config
         self.engines = {
+            TranscriptionEngine.ASSEMBLYAI: AssemblyAIEngine(),
             TranscriptionEngine.GOOGLE_WEB_SPEECH: GoogleWebSpeechEngine(),
             TranscriptionEngine.VOSK: VoskEngine(),
             TranscriptionEngine.WHISPER: WhisperEngine(),
             TranscriptionEngine.SPHINX: SphinxEngine(),
         }
         # ✅ Add AssemblyAI engine
-        self.engines[TranscriptionEngine("assemblyai")] = AssemblyAIEngine()
+        # self.engines[TranscriptionEngine("assemblyai")] = AssemblyAIEngine()
     
     def transcribe_audio(self, audio_path: str, preferred_engine: Optional[TranscriptionEngine] = None) -> Dict[str, Any]:
         """Transcribe audio using available engines with fallback"""
