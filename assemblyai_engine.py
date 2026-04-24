@@ -44,7 +44,7 @@ class AssemblyAIEngine(TranscriptionEngineInterface):
                 "punctuate":True,
                 "domain": "medical-v1", 
                 "temperature": 0,
-                "speech_model": ["universal-2"]
+                "speech_models": ["universal-2"]
             }
             response = requests.post(f"{self.base_url}/transcript", json=data, headers=self.headers)
             response.raise_for_status()
