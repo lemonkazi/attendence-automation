@@ -11,7 +11,6 @@ import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
 import os
-import uvicorn
 from typing import Dict, Any, Optional
 import logging
 from abc import ABC, abstractmethod

@@ -140,28 +140,39 @@ const AttendanceSystem = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Button
-                onClick={() => handleAttendance('checkin')}
-                disabled={!selectedEmployee || isLoading.checkin}
-                size="lg"
-                className="h-16 text-lg"
-              >
-                <LogIn className="w-5 h-5 mr-2" />
-                {isLoading.checkin ? "Processing..." : "Check In"}
-              </Button>
-              
-              <Button
-                onClick={() => handleAttendance('checkout')}
-                disabled={!selectedEmployee || isLoading.checkout}
-                variant="outline"
-                size="lg"
-                className="h-16 text-lg"
-              >
-                <LogOut className="w-5 h-5 mr-2" />
-                {isLoading.checkout ? "Processing..." : "Check Out"}
-              </Button>
-            </div>
+            {(() => {
+              const dhakaHour = parseInt(new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Asia/Dhaka',
+                hour: '2-digit',
+                hour12: false
+              }).format(new Date()));
+              const isAfterNoon = dhakaHour >= 12;
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button
+                    onClick={() => handleAttendance('checkin')}
+                    disabled={!selectedEmployee || isLoading.checkin}
+                    variant={isAfterNoon ? "outline" : "default"}
+                    size="lg"
+                    className="h-16 text-lg"
+                  >
+                    <LogIn className="w-5 h-5 mr-2" />
+                    {isLoading.checkin ? "Processing..." : "Check In"}
+                  </Button>
+                  
+                  <Button
+                    onClick={() => handleAttendance('checkout')}
+                    disabled={!selectedEmployee || isLoading.checkout}
+                    variant={isAfterNoon ? "default" : "outline"}
+                    size="lg"
+                    className="h-16 text-lg"
+                  >
+                    <LogOut className="w-5 h-5 mr-2" />
+                    {isLoading.checkout ? "Processing..." : "Check Out"}
+                  </Button>
+                </div>
+              );
+            })()}
 
             {/* Instructions */}
             <div className="text-sm text-muted-foreground bg-muted/30 p-4 rounded-lg">
