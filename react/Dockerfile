@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:18-alpine
+FROM mamun/node25:1.0
 
 # Set the working directory
 WORKDIR /usr/src/app

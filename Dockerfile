@@ -1,13 +1,12 @@
-FROM python:3.10-slim
-
-WORKDIR /usr/src/app
-# Install ffmpeg (no sudo needed)
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+FROM mamun/python310-base:1.0
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /usr/src/app
 
 COPY . .
 

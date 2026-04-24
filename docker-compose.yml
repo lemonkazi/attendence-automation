@@ -7,6 +7,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: attendance_app_img
     container_name: attendance_app
     restart: unless-stopped
     working_dir: /usr/src/app
@@ -14,14 +15,18 @@ services:
       - .:/usr/src/app
     ports:
       - "8501:8501"
-    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    command: >
+      sh -c ". /opt/venv/bin/activate &&
+             streamlit run app.py --server.port 8501 --server.address 0.0.0.0"
     networks:
       - attendance-app-networks
+      - shared_services
 
   python-api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: attendance_api_img
     container_name: attendance_api
     restart: unless-stopped
     working_dir: /usr/src/app
@@ -29,26 +34,37 @@ services:
       - .:/usr/src/app
     ports:
       - "8502:8502"
-    command: python api.py
+    command: >
+      sh -c ". /opt/venv/bin/activate &&
+             python api.py"
     networks:
       - attendance-app-networks
+      - shared_services
 
   react:
+    # image: mamun/node25:1.0
+    container_name: attendance_react      # Change per project
     build:
       context: ./react
       dockerfile: Dockerfile
     ports:
       - "5173:8080"
+    volumes:
+      - ./react:/usr/src/app
+      - react_node_modules:/usr/src/app/node_modules
     depends_on:
       - python-api
     networks:
       - attendance-app-networks
+      - shared_services
+      
 
 # Docker Networks
 networks:
   attendance-app-networks:
     driver: bridge
+  shared_services:
+    external: true
 
 volumes:
-  dbdata:
-    driver: local
+  react_node_modules:
