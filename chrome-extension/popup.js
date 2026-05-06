@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:8502';
+// const API_BASE_URL = 'http://localhost:8502';
+//const API_BASE_URL = 'http://python-api:8502';
+const API_BASE_URL = 'https://dev.paradigmuc.com/jobcan-api';
 
 const elements = {
   time: document.getElementById('current-time'),
@@ -107,7 +109,7 @@ const handleAttendance = async (action) => {
 
     if (response.ok) {
       const actionText = action === 'checkin' ? 'checked-in' : 'checked-out';
-      showToast(`Success! ${employee} ${actionText}`, 'success');
+      showToast(`Success! ${employee} ${actionText} at ${getRecordingTime()}`, 'success');
     } else {
       throw new Error('Failed to update attendance');
     }

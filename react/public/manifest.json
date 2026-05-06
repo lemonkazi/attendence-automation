@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ParadigmUC Attendance Tracker",
+  "name": "Attendance Tracker",
   "version": "1.0",
   "description": "Quickly record attendance check-in and check-out.",
   "permissions": [
@@ -22,8 +22,6 @@
     "128": "icons/icon128.png"
   },
   "host_permissions": [
-    "http://localhost:8502/*",
-    "http://python-api:8502/*",
-    "https://dev.paradigmuc.com/*"
+    "http://localhost:8502/*"
   ]
 }

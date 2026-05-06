@@ -57,7 +57,7 @@ class TranscriptionConfig:
         #     TranscriptionEngine.WHISPER,  # High accuracy
         #     TranscriptionEngine.GOOGLE_WEB_SPEECH,  # Fallback
         # ]
-        self.max_audio_length = 600  # 10 minutes
+        self.max_audio_length = 900  # 10 minutes
         self.sample_rate = 16000
 
 # classes (TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface) 
