@@ -34,14 +34,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# --- Transcription Engine ---
-class TranscriptionEngine(Enum):
-    GOOGLE_WEB_SPEECH = "google_web_speech"
-    VOSK = "vosk"
-    WHISPER = "whisper"
-    SPHINX = "sphinx"
-    ASSEMBLYAI = "assemblyai"  # ✅ new engine
-
+# --- Transcription Config ---
 class TranscriptionConfig:
     """Configuration for transcription services"""
     def __init__(self):
@@ -67,24 +60,8 @@ class TranscriptionConfig:
         self.max_audio_length = 300  # 5 minutes
         self.sample_rate = 16000
 
-class TranscriptionResult:
-    """Standardized result format"""
-    def __init__(self, text: str, engine: TranscriptionEngine, confidence: float = 1.0, success: bool = True):
-        self.text = text
-        self.engine = engine
-        self.confidence = confidence
-        self.success = success
-
-class TranscriptionEngineInterface(ABC):
-    """Interface for transcription engines"""
-    
-    @abstractmethod
-    def transcribe(self, audio_path: str) -> TranscriptionResult:
-        pass
-    
-    @abstractmethod
-    def is_available(self) -> bool:
-        pass
+# classes (TranscriptionEngine, TranscriptionResult, TranscriptionEngineInterface) 
+# are imported from transcription_base.py
 
 class GoogleWebSpeechEngine(TranscriptionEngineInterface):
     def __init__(self):
@@ -248,6 +225,7 @@ class TranscriptionService:
                         return {
                             "success": True,
                             "text": result.text,
+                            "words": result.words,
                             "engine": result.engine.value,
                             "message": f"Transcription completed successfully using {result.engine.value}"
                         }

@@ -57,10 +57,12 @@ class AssemblyAIEngine(TranscriptionEngineInterface):
                 poll_res = requests.get(polling_endpoint, headers=self.headers).json()
                 if poll_res["status"] == "completed":
                     text = poll_res["text"]
+                    words = poll_res.get("words", [])
                     return TranscriptionResult(
                         text=text,
                         engine=TranscriptionEngine("assemblyai"),
-                        confidence=1.0
+                        confidence=1.0,
+                        words=words
                     )
                 elif poll_res["status"] == "error":
                     raise RuntimeError(f"AssemblyAI failed: {poll_res['error']}")

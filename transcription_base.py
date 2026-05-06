@@ -10,11 +10,12 @@ class TranscriptionEngine(Enum):
 
 class TranscriptionResult:
     """Standardized result format"""
-    def __init__(self, text: str, engine: TranscriptionEngine, confidence: float = 1.0, success: bool = True):
+    def __init__(self, text: str, engine: TranscriptionEngine, confidence: float = 1.0, success: bool = True, words: list = None):
         self.text = text
         self.engine = engine
         self.confidence = confidence
         self.success = success
+        self.words = words or []
 
 class TranscriptionEngineInterface(ABC):
     """Interface for transcription engines"""
